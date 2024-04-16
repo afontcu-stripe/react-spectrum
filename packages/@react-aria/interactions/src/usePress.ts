@@ -21,6 +21,19 @@ import {focusWithoutScrolling, isMac, isVirtualClick, isVirtualPointerEvent, mer
 import {PressResponderContext} from './context';
 import {RefObject, useContext, useEffect, useMemo, useRef, useState} from 'react';
 
+const getOwnerDocument = (el: Element | null | undefined): Document => el?.ownerDocument ?? document;
+
+const getOwnerWindow = (
+  el: (Window & typeof global) | Element | null | undefined
+): Window & typeof global => {
+  if (el && 'window' in el && el.window === el) {
+    return el;
+  }
+
+  const doc = getOwnerDocument(el as Element | null | undefined);
+  return (doc.defaultView || window) as Window & typeof global;
+};
+
 export interface PressProps extends PressEvents {
   /** Whether the target is in a controlled press state (e.g. an overlay it triggers is open). */
   isPressed?: boolean,
@@ -271,7 +284,7 @@ export function usePress(props: PressHookProps): PressResult {
 
             // Focus may move before the key up event, so register the event on the document
             // instead of the same element where the key down event occurred.
-            addGlobalListener(document, 'keyup', onKeyUp, false);
+            addGlobalListener(e.currentTarget.ownerDocument, 'keyup', onKeyUp, false);
           }
 
           if (shouldStopPropagation) {
@@ -410,9 +423,9 @@ export function usePress(props: PressHookProps): PressResult {
 
           shouldStopPropagation = triggerPressStart(e, state.pointerType);
 
-          addGlobalListener(document, 'pointermove', onPointerMove, false);
-          addGlobalListener(document, 'pointerup', onPointerUp, false);
-          addGlobalListener(document, 'pointercancel', onPointerCancel, false);
+          addGlobalListener(e.currentTarget.ownerDocument, 'pointermove', onPointerMove, false);
+          addGlobalListener(e.currentTarget.ownerDocument, 'pointerup', onPointerUp, false);
+          addGlobalListener(e.currentTarget.ownerDocument, 'pointercancel', onPointerCancel, false);
         }
 
         if (shouldStopPropagation) {
@@ -534,7 +547,7 @@ export function usePress(props: PressHookProps): PressResult {
           e.stopPropagation();
         }
 
-        addGlobalListener(document, 'mouseup', onMouseUp, false);
+        addGlobalListener(e.currentTarget.ownerDocument, 'mouseup', onMouseUp, false);
       };
 
       pressProps.onMouseEnter = (e) => {
@@ -634,7 +647,9 @@ export function usePress(props: PressHookProps): PressResult {
           e.stopPropagation();
         }
 
-        addGlobalListener(window, 'scroll', onScroll, true);
+        const windowObject = e.currentTarget.ownerDocument.defaultView || window;
+
+        addGlobalListener(windowObject, 'scroll', onScroll, true);
       };
 
       pressProps.onTouchMove = (e) => {
@@ -768,13 +783,14 @@ function isHTMLAnchorLink(target: Element): target is HTMLAnchorElement {
 function isValidKeyboardEvent(event: KeyboardEvent, currentTarget: Element): boolean {
   const {key, code} = event;
   const element = currentTarget as HTMLElement;
+  const windowObject = getOwnerWindow(element);
   const role = element.getAttribute('role');
   // Accessibility for keyboards. Space and Enter only.
   // "Spacebar" is for IE 11
   return (
     (key === 'Enter' || key === ' ' || key === 'Spacebar' || code === 'Space') &&
-    !((element instanceof HTMLInputElement && !isValidInputKey(element, key)) ||
-      element instanceof HTMLTextAreaElement ||
+    !((element instanceof windowObject.HTMLInputElement && !isValidInputKey(element, key)) ||
+      element instanceof windowObject.HTMLTextAreaElement ||
       element.isContentEditable) &&
     // Links should only trigger with Enter key
     !((role === 'link' || (!role && isHTMLAnchorLink(element))) && key !== 'Enter')
@@ -861,15 +877,15 @@ function isOverTarget(point: EventPoint, target: Element) {
 
 function shouldPreventDefault(target: Element) {
   // We cannot prevent default if the target is a draggable element.
-  return !(target instanceof HTMLElement) || !target.hasAttribute('draggable');
+  return !(target instanceof getOwnerWindow(target).HTMLElement) || !target.hasAttribute('draggable');
 }
 
 function shouldPreventDefaultKeyboard(target: Element, key: string) {
-  if (target instanceof HTMLInputElement) {
+  if (target instanceof getOwnerWindow(target).HTMLInputElement) {
     return !isValidInputKey(target, key);
   }
 
-  if (target instanceof HTMLButtonElement) {
+  if (target instanceof getOwnerWindow(target).HTMLButtonElement) {
     return target.type !== 'submit' && target.type !== 'reset';
   }
 
